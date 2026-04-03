@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TwinPixel</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero panel">
+        <div class="hero-copy">
+          <p class="eyebrow">TwinPixel</p>
+          <h1>Visual QA that stays in sync.</h1>
+          <p class="lede">
+            TwinPixel helps you compare two live pages at the same viewport, surface layout drift,
+            spacing shifts, typography mismatches, and pixel-level differences, and review both sides
+            together in one synchronized workspace. Use DOM audit mode to highlight structural changes,
+            or switch to screenshot diff mode when you need a clean visual comparison for protected or
+            hard-to-embed pages.
+          </p>
+        </div>
+        <div class="hero-meta">
+          <span class="hero-chip">Twin Review</span>
+          <span class="hero-chip hero-chip-soft">Develop - Nishant Singh</span>
+        </div>
+      </section>
+
+      <section class="panel controls">
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">Session Setup</p>
+            <h2>Configure comparison</h2>
+          </div>
+        </div>
+        <form id="compare-form">
+          <label>
+            Left URL
+            <input id="left-url" name="leftUrl" type="url" placeholder="https://example.com" required />
+          </label>
+          <label>
+            Right URL
+            <input id="right-url" name="rightUrl" type="url" placeholder="https://staging.example.com" required />
+          </label>
+          <label>
+            Viewport
+            <select id="viewport" name="viewport"></select>
+          </label>
+          <label>
+            Compare mode
+            <select id="mode" name="mode"></select>
+          </label>
+          <label class="toggle-row wide" for="login-comparison-toggle">
+            <span class="toggle-copy">
+              <span class="toggle-title">Logged-in comparison</span>
+              <span class="toggle-hint">Enable this when both pages require a real signed-in session.</span>
+            </span>
+            <input id="login-comparison-toggle" type="checkbox" />
+          </label>
+          <input id="storage-state-path" name="storageStatePath" type="hidden" />
+          <section id="capture-panel" class="capture-panel wide">
+            <div class="capture-copy">
+              <p class="section-kicker">Login Capture</p>
+              <h3>Open a site, sign in, then save session</h3>
+              <p class="capture-text">
+                Use one real browser session for both pages. Open the left or right site, log in
+                manually in that browser, then save the resulting storage-state file back into this form.
+              </p>
+            </div>
+            <div class="capture-grid">
+              <label>
+                Session name
+                <input id="capture-session-name" type="text" placeholder="client-staging-login" />
+              </label>
+            </div>
+            <div class="actions capture-actions">
+              <button type="button" id="start-left-capture-button" class="secondary">Open left site</button>
+              <button type="button" id="start-right-capture-button" class="secondary">Open right site</button>
+              <button type="button" id="save-capture-button" class="secondary" disabled>Save session</button>
+              <button type="button" id="cancel-capture-button" class="secondary" disabled>Cancel</button>
+            </div>
+            <p id="capture-status" class="status capture-status">No login capture in progress.</p>
+          </section>
+          <div class="actions">
+            <button type="submit" id="compare-button">Run comparison</button>
+            <button type="button" id="open-live-button" class="secondary" disabled>Open live inspection</button>
+          </div>
+          <p id="status" class="status">Waiting for input.</p>
+        </form>
+      </section>
+
+      <section class="workspace">
+        <article class="panel stage">
+          <div class="stage-header">
+            <h2>Left Preview</h2>
+            <span id="left-meta" class="meta"></span>
+          </div>
+          <div id="left-frame-wrap" class="frame-wrap">
+            <div id="left-placeholder" class="preview-placeholder">Run a comparison to load the left preview.</div>
+            <img id="left-image" class="preview-image" alt="Left screenshot preview" />
+            <div id="left-overlay" class="overlay-layer"></div>
+          </div>
+        </article>
+
+        <article class="panel stage">
+          <div class="stage-header">
+            <h2>Right Preview</h2>
+            <span id="right-meta" class="meta"></span>
+          </div>
+          <div id="right-frame-wrap" class="frame-wrap">
+            <div id="right-placeholder" class="preview-placeholder">Run a comparison to load the right preview.</div>
+            <img id="right-image" class="preview-image" alt="Right screenshot preview" />
+            <div id="right-overlay" class="overlay-layer"></div>
+          </div>
+        </article>
+      </section>
+
+      <section class="panel findings">
+        <div class="stage-header">
+          <h2>Review Notes</h2>
+          <span id="summary" class="meta">No comparison yet.</span>
+        </div>
+        <ul id="warnings-list" class="warnings-list"></ul>
+        <div id="artifact-summary" class="artifact-summary"></div>
+        <img id="diff-image" class="diff-image" alt="Pixel diff preview" />
+        <ol id="findings-list" class="findings-list"></ol>
+      </section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
