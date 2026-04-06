@@ -144,8 +144,73 @@ label {
   font-size: 0.92rem;
 }
 
+fieldset {
+  margin: 0;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(22, 22, 22, 0.08);
+  background: rgba(255, 255, 255, 0.48);
+}
+
+legend {
+  padding: 0 8px;
+  color: var(--ink);
+  font-weight: 700;
+}
+
 .wide {
   grid-column: 1 / -1;
+}
+
+.fieldset-hint {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.viewport-options {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.custom-viewport-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.viewport-option {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 10px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(22, 22, 22, 0.08);
+  background: rgba(244, 239, 230, 0.72);
+}
+
+.viewport-option input {
+  grid-row: span 2;
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  accent-color: var(--brand);
+}
+
+.viewport-option span,
+.viewport-option small {
+  display: block;
+}
+
+.viewport-option span {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.viewport-option small {
+  color: var(--muted);
 }
 
 .toggle-row {
@@ -274,9 +339,9 @@ form > .actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 20px;
-  max-height: 72vh;
-  overflow-y: auto;
-  padding-right: 6px;
+  max-height: none;
+  overflow: visible;
+  padding-right: 0;
 }
 
 .stage,
@@ -379,6 +444,51 @@ form > .actions {
 .findings {
   margin-top: 18px;
   background: var(--panel-strong);
+}
+
+.run-summary {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(29, 78, 216, 0.08);
+  color: #1e3a8a;
+}
+
+.session-list {
+  margin: 0 0 18px;
+  padding: 0;
+  list-style: none;
+  display: none;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.session-button {
+  width: 100%;
+  min-height: 0;
+  padding: 12px 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(22, 22, 22, 0.08);
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--ink);
+  box-shadow: none;
+  text-align: left;
+}
+
+.session-button strong,
+.session-button span {
+  display: block;
+}
+
+.session-button span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.session-button.active {
+  border-color: rgba(188, 90, 15, 0.38);
+  background: rgba(188, 90, 15, 0.12);
 }
 
 .findings-list {
@@ -499,8 +609,22 @@ form > .actions {
     grid-template-columns: 1fr;
   }
 
+  .viewport-options {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .custom-viewport-grid {
+    grid-template-columns: 1fr;
+  }
+
   .workspace {
     max-height: none;
     overflow: visible;
+  }
+}
+
+@media (max-width: 640px) {
+  .viewport-options {
+    grid-template-columns: 1fr;
   }
 }

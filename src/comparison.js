@@ -179,8 +179,46 @@ function clampNumber(value) {
   return Number.parseFloat(value.toFixed(2));
 }
 
-function getViewport(preset) {
-  return VIEWPORTS[preset] || VIEWPORTS.desktop;
+function normalizeViewportKey(label) {
+  return String(label || "custom")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "custom";
+}
+
+function clampViewportDimension(value, fallback, min, max) {
+  const parsed = Number.parseInt(value, 10);
+
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+
+  return Math.min(Math.max(parsed, min), max);
+}
+
+function getViewport(preset, customViewport = null) {
+  if (customViewport) {
+    const width = clampViewportDimension(customViewport.width, 1280, 320, 2560);
+    const height = clampViewportDimension(customViewport.height, 800, 320, 1800);
+    const rawLabel = typeof customViewport.label === "string" ? customViewport.label.trim() : "";
+    const label = rawLabel || `Custom ${width} x ${height}`;
+
+    return {
+      key: `custom-${normalizeViewportKey(label)}-${width}x${height}`,
+      width,
+      height,
+      label,
+      isCustom: true
+    };
+  }
+
+  const presetViewport = VIEWPORTS[preset] || VIEWPORTS.desktop;
+  return {
+    key: preset,
+    ...presetViewport,
+    isCustom: false
+  };
 }
 
 const STABILIZE_INIT_SCRIPT = ({ fixedTimestamp }) => {
@@ -210,7 +248,7 @@ const STABILIZE_INIT_SCRIPT = ({ fixedTimestamp }) => {
 
 const STABILIZE_PAGE_SCRIPT = () => {
   const style = document.createElement("style");
-  style.setAttribute("data-twinpixel-stabilize", "true");
+  style.setAttribute("data-pixcel-stabilize", "true");
   style.textContent = `
     *,
     *::before,
@@ -633,12 +671,13 @@ export async function comparePages({
   leftUrl,
   rightUrl,
   viewportPreset = "desktop",
+  customViewport = null,
   mismatchLimit = 40,
   mode = "dom",
   artifactDir,
   storageStatePath = null
 }) {
-  const viewport = getViewport(viewportPreset);
+  const viewport = getViewport(viewportPreset, customViewport);
   const fixedTimestamp = Date.UTC(2026, 0, 1, 0, 0, 0);
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext(buildContextOptions(viewport, storageStatePath));
@@ -671,7 +710,9 @@ export async function comparePages({
       return {
         sessionId,
         mode,
-        viewport: viewportPreset,
+        requestedMode: mode,
+        fallbackReason: null,
+        viewport: viewport.key,
         viewportSize: viewport,
         left: leftSnapshot,
         right: rightSnapshot,
@@ -689,7 +730,9 @@ export async function comparePages({
     return {
       sessionId,
       mode,
-      viewport: viewportPreset,
+      requestedMode: mode,
+      fallbackReason: null,
+      viewport: viewport.key,
       viewportSize: viewport,
       left: leftSnapshot,
       right: rightSnapshot,
@@ -716,7 +759,7 @@ export async function openLiveComparison(session, storageStatePath = null) {
     throw new Error("Live inspection is blocked because one of the pages is behind bot protection.");
   }
 
-  const viewport = getViewport(session.viewport);
+  const viewport = getViewport(session.viewport, session.viewportSize);
   const mismatchPayload = session.mismatches.map((mismatch) => ({
     key: mismatch.key,
     label: mismatch.label,

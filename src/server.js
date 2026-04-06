@@ -10,9 +10,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const publicDir = path.join(__dirname, "..", "public");
 const artifactDir = path.join(publicDir, "artifacts");
-const storageStateDir = path.join(process.cwd(), ".twinpixel-sessions");
+const storageStateDir = path.join(process.cwd(), ".pixcel-tool-sessions");
 const app = express();
 const port = Number.parseInt(process.env.PORT || "4173", 10);
+const host = process.env.HOST || "127.0.0.1";
 const sessions = new Map();
 const loginCaptures = new Map();
 const SESSION_RETENTION_MS = 30 * 60 * 1000;
@@ -67,6 +68,44 @@ function sanitizeSessionName(value) {
   const raw = typeof value === "string" ? value.trim() : "";
   const cleaned = raw.replace(/[^a-zA-Z0-9-_]+/g, "-").replace(/^-+|-+$/g, "");
   return cleaned || `session-${Date.now()}`;
+}
+
+function parseViewportDimension(value, name) {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`${name} must be a whole number.`);
+  }
+
+  if (parsed < 320 || parsed > 2560) {
+    throw new Error(`${name} must be between 320 and 2560.`);
+  }
+
+  return parsed;
+}
+
+function parseCustomViewport(body) {
+  const width = parseViewportDimension(body.customWidth, "customWidth");
+  const height = parseViewportDimension(body.customHeight, "customHeight");
+  const label = typeof body.customLabel === "string" ? body.customLabel.trim() : "";
+
+  if (width === null && height === null && !label) {
+    return null;
+  }
+
+  if (width === null || height === null) {
+    throw new Error("Both customWidth and customHeight are required for a custom viewport.");
+  }
+
+  if (height < 320 || height > 1800) {
+    throw new Error("customHeight must be between 320 and 1800.");
+  }
+
+  return { width, height, label };
 }
 
 function artifactFilenamesFromSession(session) {
@@ -167,7 +206,7 @@ app.post("/api/storage-state/start", async (req, res) => {
       outputPath,
       loginUrl,
       sessionName,
-      message: "Browser opened. Log in there, then click Save session in TwinPixel."
+      message: "Browser opened. Log in there, then click Save session in Pixcel tool."
     });
   } catch (error) {
     res.status(400).json({
@@ -193,7 +232,7 @@ app.post("/api/storage-state/complete/:captureId", async (req, res) => {
 
     res.json({
       outputPath: capture.outputPath,
-      message: "Storage state saved. TwinPixel can use it for logged-in comparison now."
+      message: "Storage state saved. Pixcel tool can use it for logged-in comparison now."
     });
   } catch (error) {
     res.status(500).json({
@@ -230,10 +269,12 @@ app.post("/api/compare", async (req, res) => {
     const viewport = typeof req.body.viewport === "string" ? req.body.viewport : "desktop";
     const mode = typeof req.body.mode === "string" ? req.body.mode : "dom";
     const storageStatePath = await validateStorageStatePath(req.body.storageStatePath);
+    const customViewport = parseCustomViewport(req.body);
     const session = await comparePages({
       leftUrl,
       rightUrl,
       viewportPreset: viewport,
+      customViewport,
       mode,
       storageStatePath,
       artifactDir
@@ -248,6 +289,62 @@ app.post("/api/compare", async (req, res) => {
   } catch (error) {
     res.status(400).json({
       error: error instanceof Error ? error.message : "Comparison failed."
+    });
+  }
+});
+
+app.post("/api/compare/batch", async (req, res) => {
+  try {
+    await cleanupArtifacts();
+    const leftUrl = validateUrl(req.body.leftUrl, "leftUrl");
+    const rightUrl = validateUrl(req.body.rightUrl, "rightUrl");
+    const mode = typeof req.body.mode === "string" ? req.body.mode : "dom";
+    const storageStatePath = await validateStorageStatePath(req.body.storageStatePath);
+    const customViewport = parseCustomViewport(req.body);
+    const requestedViewports = Array.isArray(req.body.viewports) ? req.body.viewports : [];
+    const viewportKeys = requestedViewports
+      .filter((value) => typeof value === "string")
+      .filter((value, index, values) => values.indexOf(value) === index)
+      .filter((value) => Object.hasOwn(VIEWPORTS, value));
+
+    if (viewportKeys.length === 0 && !customViewport) {
+      throw new Error("At least one valid viewport is required.");
+    }
+
+    const results = [];
+    const queuedViewports = [...viewportKeys];
+
+    if (customViewport) {
+      queuedViewports.push("__custom__");
+    }
+
+    for (const viewportPreset of queuedViewports) {
+      const session = await comparePages({
+        leftUrl,
+        rightUrl,
+        viewportPreset: viewportPreset === "__custom__" ? "custom" : viewportPreset,
+        customViewport: viewportPreset === "__custom__" ? customViewport : null,
+        mode,
+        storageStatePath,
+        artifactDir
+      });
+
+      sessions.set(session.sessionId, {
+        ...session,
+        createdAt: Date.now(),
+        storageStatePath
+      });
+      results.push(session);
+    }
+
+    res.json({
+      mode,
+      requestedViewports: queuedViewports,
+      results
+    });
+  } catch (error) {
+    res.status(400).json({
+      error: error instanceof Error ? error.message : "Batch comparison failed."
     });
   }
 });
@@ -274,8 +371,8 @@ app.get("*", (_req, res) => {
   res.sendFile(path.join(publicDir, "index.html"));
 });
 
-app.listen(port, () => {
-  console.log(`Pixcel tool running at http://localhost:${port}`);
+app.listen(port, host, () => {
+  console.log(`Pixcel tool running at http://${host}:${port}`);
 });
 
 setInterval(() => {

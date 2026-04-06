@@ -1,5 +1,9 @@
 const form = document.getElementById("compare-form");
 const viewportSelect = document.getElementById("viewport");
+const viewportOptions = document.getElementById("viewport-options");
+const customWidthInput = document.getElementById("custom-width");
+const customHeightInput = document.getElementById("custom-height");
+const customLabelInput = document.getElementById("custom-label");
 const modeSelect = document.getElementById("mode");
 const leftUrlInput = document.getElementById("left-url");
 const rightUrlInput = document.getElementById("right-url");
@@ -15,6 +19,8 @@ const captureStatusNode = document.getElementById("capture-status");
 const statusNode = document.getElementById("status");
 const openLiveButton = document.getElementById("open-live-button");
 const summaryNode = document.getElementById("summary");
+const runSummaryNode = document.getElementById("run-summary");
+const sessionList = document.getElementById("session-list");
 const warningsList = document.getElementById("warnings-list");
 const artifactSummary = document.getElementById("artifact-summary");
 const diffImage = document.getElementById("diff-image");
@@ -32,9 +38,34 @@ const leftMeta = document.getElementById("left-meta");
 const rightMeta = document.getElementById("right-meta");
 
 let currentSessionId = null;
-let lastResult = null;
+let currentResults = [];
+let selectedResultIndex = -1;
 let activeCaptureId = null;
 let activeMismatchIndex = null;
+
+function getSelectedResult() {
+  return currentResults[selectedResultIndex] || null;
+}
+
+function ensureViewportOption(value, label) {
+  const existing = Array.from(viewportSelect.options).find((option) => option.value === value);
+
+  if (existing) {
+    existing.textContent = label;
+    return;
+  }
+
+  const option = document.createElement("option");
+  option.value = value;
+  option.textContent = label;
+  viewportSelect.appendChild(option);
+}
+
+function syncViewportSelectValue(result) {
+  const viewportLabel = `${result.viewportSize.label} (${result.viewportSize.width} x ${result.viewportSize.height})`;
+  ensureViewportOption(result.viewport, viewportLabel);
+  viewportSelect.value = result.viewport;
+}
 
 function setCaptureStatus(message, isError = false) {
   captureStatusNode.textContent = message;
@@ -138,6 +169,7 @@ function renderBoxes(target, mismatches, side, scale, activeIndex = null) {
 
     const box = document.createElement("div");
     box.className = `overlay-box ${side}`;
+    box.dataset.index = String(index);
     if (index === activeIndex) {
       box.classList.add("active");
     }
@@ -153,37 +185,42 @@ function renderBoxes(target, mismatches, side, scale, activeIndex = null) {
   });
 }
 
+function findOverlayTarget(index) {
+  return (
+    leftOverlay.querySelector(`.overlay-box[data-index="${index}"]`) ||
+    rightOverlay.querySelector(`.overlay-box[data-index="${index}"]`)
+  );
+}
+
 function setActiveFinding(index) {
   activeMismatchIndex = index;
   findingsList.querySelectorAll(".finding-button").forEach((button) => {
     button.classList.toggle("active", Number(button.dataset.index) === index);
   });
 
-  if (lastResult) {
-    updateOverlayScale(lastResult);
+  const result = getSelectedResult();
+
+  if (result) {
+    updateOverlayScale(result);
   }
 }
 
 function focusMismatch(index) {
-  if (!lastResult || !lastResult.mismatches[index]) {
+  const result = getSelectedResult();
+
+  if (!result || !result.mismatches[index]) {
     return;
   }
 
-  const mismatch = lastResult.mismatches[index];
-  const leftScale = lastResult.artifacts?.width ? leftImage.clientWidth / lastResult.artifacts.width : 1;
-  const rightScale = lastResult.artifacts?.width ? rightImage.clientWidth / lastResult.artifacts.width : 1;
-  const leftTarget =
-    mismatch.left?.rect?.y != null ? leftFrameWrap.offsetTop + mismatch.left.rect.y * leftScale : Number.MAX_SAFE_INTEGER;
-  const rightTarget =
-    mismatch.right?.rect?.y != null
-      ? rightFrameWrap.offsetTop + mismatch.right.rect.y * rightScale
-      : Number.MAX_SAFE_INTEGER;
-  const targetY = Math.max(0, Math.min(leftTarget, rightTarget) - 32);
-
   setActiveFinding(index);
-  workspace?.scrollTo({
-    top: targetY,
-    behavior: "smooth"
+
+  requestAnimationFrame(() => {
+    const target = findOverlayTarget(index);
+    target?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+      inline: "nearest"
+    });
   });
 }
 
@@ -222,6 +259,65 @@ function renderFindings(result) {
     item.querySelector(".finding-button")?.addEventListener("click", () => focusMismatch(index));
     findingsList.appendChild(item);
   });
+}
+
+function renderSessionList() {
+  sessionList.innerHTML = "";
+
+  if (currentResults.length <= 1) {
+    sessionList.style.display = "none";
+    return;
+  }
+
+  sessionList.style.display = "grid";
+
+  currentResults.forEach((result, index) => {
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    const mismatchCount =
+      result.mode === "screenshot" ? "Screenshot diff" : `${result.mismatches.length} mismatches`;
+
+    button.type = "button";
+    button.className = "session-button";
+    button.dataset.index = String(index);
+    button.innerHTML = `
+      <strong>${result.viewportSize.width} x ${result.viewportSize.height}</strong>
+      <span>${mismatchCount}</span>
+    `;
+    button.classList.toggle("active", index === selectedResultIndex);
+    button.addEventListener("click", () => applySelectedResult(index));
+    item.appendChild(button);
+    sessionList.appendChild(item);
+  });
+}
+
+function applySelectedResult(index) {
+  const result = currentResults[index];
+
+  if (!result) {
+    return;
+  }
+
+  selectedResultIndex = index;
+  currentSessionId = result.sessionId;
+  activeMismatchIndex = null;
+  syncViewportSelectValue(result);
+  summaryNode.textContent =
+    result.mode === "screenshot"
+      ? `Screenshot diff at ${result.viewportSize.width} x ${result.viewportSize.height}`
+      : `${result.mismatches.length} mismatches at ${result.viewportSize.width} x ${result.viewportSize.height}`;
+  renderSessionList();
+  renderWarnings(result.warnings || []);
+  renderArtifacts(result);
+  renderFindings(result);
+  updatePreviewMeta(result);
+  updateActionState(result);
+
+  if (result.mismatches.length > 0) {
+    setActiveFinding(0);
+  } else {
+    updateOverlayScale(result);
+  }
 }
 
 function updatePreviewMeta(result) {
@@ -271,6 +367,36 @@ function updateActionState(result) {
   );
 }
 
+function getRequestedViewportValues() {
+  const selected = Array.from(
+    viewportOptions.querySelectorAll('input[name="viewports"]:checked'),
+    (input) => input.value
+  );
+
+  if (selected.length > 0) {
+    return selected;
+  }
+
+  return currentResults.some((result) => result.viewport === viewportSelect.value) ? [viewportSelect.value] : [];
+}
+
+function updateRunSummary(results, mode) {
+  if (!results.length) {
+    runSummaryNode.hidden = true;
+    runSummaryNode.textContent = "";
+    return;
+  }
+
+  const totalMismatches = results.reduce((sum, result) => sum + (result.mismatches?.length || 0), 0);
+  const viewportCount = results.length;
+
+  runSummaryNode.hidden = false;
+  runSummaryNode.textContent =
+    mode === "screenshot"
+      ? `${viewportCount} viewport checks completed in screenshot diff mode.`
+      : `${viewportCount} viewport checks completed with ${totalMismatches} highlighted DOM mismatches total.`;
+}
+
 async function loadViewports() {
   const response = await fetch("/api/viewports");
   const viewports = await response.json();
@@ -280,9 +406,21 @@ async function loadViewports() {
     option.value = value;
     option.textContent = `${viewport.label} (${viewport.width} x ${viewport.height})`;
     viewportSelect.appendChild(option);
+
+    const label = document.createElement("label");
+    label.className = "viewport-option";
+    label.innerHTML = `
+      <input type="checkbox" name="viewports" value="${value}" ${value === "desktop" ? "checked" : ""} />
+      <span>${viewport.label}</span>
+      <small>${viewport.width} x ${viewport.height}</small>
+    `;
+    viewportOptions.appendChild(label);
   });
 
   viewportSelect.value = "desktop";
+  customWidthInput.value = "";
+  customHeightInput.value = "";
+  customLabelInput.value = "";
 }
 
 async function loadModes() {
@@ -304,18 +442,35 @@ async function handleCompare(event) {
   resetOverlays();
   renderWarnings();
   renderArtifacts({});
+  sessionList.innerHTML = "";
+  sessionList.style.display = "none";
+  runSummaryNode.hidden = true;
+  runSummaryNode.textContent = "";
   openLiveButton.disabled = true;
-  setStatus("Running browser comparison...");
+  setStatus("Running viewport comparison...");
 
   try {
     const formData = new FormData(form);
     const payload = Object.fromEntries(formData.entries());
+    payload.viewports = getRequestedViewportValues();
+
+    if (!payload.customWidth) {
+      delete payload.customWidth;
+    }
+
+    if (!payload.customHeight) {
+      delete payload.customHeight;
+    }
+
+    if (!payload.customLabel) {
+      delete payload.customLabel;
+    }
 
     if (!loginComparisonToggle.checked || !payload.storageStatePath) {
       delete payload.storageStatePath;
     }
 
-    const response = await fetch("/api/compare", {
+    const response = await fetch("/api/compare/batch", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
@@ -326,31 +481,18 @@ async function handleCompare(event) {
       throw new Error(result.error || "Comparison failed.");
     }
 
-    currentSessionId = result.sessionId;
-    lastResult = result;
-    activeMismatchIndex = null;
-    summaryNode.textContent =
-      result.mode === "screenshot"
-        ? `Screenshot diff at ${result.viewportSize.width} x ${result.viewportSize.height}`
-        : `${result.mismatches.length} mismatches at ${result.viewportSize.width} x ${result.viewportSize.height}`;
-    renderWarnings(result.warnings || []);
-    renderArtifacts(result);
-    renderFindings(result);
-    updatePreviewMeta(result);
-    updateActionState(result);
-    if (result.mismatches.length > 0) {
-      setActiveFinding(0);
-    }
-
-    if (leftImage.complete && rightImage.complete) {
-      updateOverlayScale(result);
-    }
+    currentResults = Array.isArray(result.results) ? result.results : [];
+    updateRunSummary(currentResults, payload.mode);
+    applySelectedResult(0);
   } catch (error) {
     currentSessionId = null;
-    lastResult = null;
+    currentResults = [];
+    selectedResultIndex = -1;
     summaryNode.textContent = "Comparison failed.";
     renderWarnings();
     renderArtifacts({});
+    findingsList.innerHTML = "";
+    updateRunSummary([], "dom");
     setStatus(error.message || "Comparison failed.", true);
   }
 }
@@ -380,7 +522,7 @@ async function handleStartCapture(loginUrl) {
   setCaptureStatus("Opening a login browser...");
 
   try {
-    const sessionName = captureSessionNameInput.value || "twinpixel-login";
+    const sessionName = captureSessionNameInput.value || "pixcel-login";
     const response = await fetch("/api/storage-state/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -452,14 +594,16 @@ cancelCaptureButton.addEventListener("click", handleCancelCapture);
 loginComparisonToggle.addEventListener("change", syncLoginComparisonUi);
 leftImage.addEventListener("load", () => {
   setPreviewState("left", "ready");
-  if (lastResult) {
-    updateOverlayScale(lastResult);
+  const result = getSelectedResult();
+  if (result) {
+    updateOverlayScale(result);
   }
 });
 rightImage.addEventListener("load", () => {
   setPreviewState("right", "ready");
-  if (lastResult) {
-    updateOverlayScale(lastResult);
+  const result = getSelectedResult();
+  if (result) {
+    updateOverlayScale(result);
   }
 });
 leftImage.addEventListener("error", () => {
@@ -469,13 +613,21 @@ rightImage.addEventListener("error", () => {
   setPreviewState("right", "error", "Right preview could not be loaded. Run the comparison again.");
 });
 window.addEventListener("resize", () => {
-  if (lastResult) {
-    updateOverlayScale(lastResult);
+  const result = getSelectedResult();
+  if (result) {
+    updateOverlayScale(result);
   }
 });
 modeSelect.addEventListener("change", () => {
   openLiveButton.textContent = modeSelect.value === "dom" ? "Open live inspection" : "Live inspection unavailable";
   openLiveButton.disabled = true;
+});
+viewportSelect.addEventListener("change", () => {
+  const nextIndex = currentResults.findIndex((result) => result.viewport === viewportSelect.value);
+
+  if (nextIndex >= 0) {
+    applySelectedResult(nextIndex);
+  }
 });
 
 Promise.all([loadViewports(), loadModes()]).catch((error) => {

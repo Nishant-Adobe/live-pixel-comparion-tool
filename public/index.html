@@ -3,26 +3,24 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>TwinPixel</title>
+    <title>Pixcel tool</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <main class="shell">
       <section class="hero panel">
         <div class="hero-copy">
-          <p class="eyebrow">TwinPixel</p>
-          <h1>Visual QA that stays in sync.</h1>
+          <p class="eyebrow">Pixcel tool</p>
+          <h1>Pixel QA for two live URLs.</h1>
           <p class="lede">
-            TwinPixel helps you compare two live pages at the same viewport, surface layout drift,
-            spacing shifts, typography mismatches, and pixel-level differences, and review both sides
-            together in one synchronized workspace. Use DOM audit mode to highlight structural changes,
-            or switch to screenshot diff mode when you need a clean visual comparison for protected or
-            hard-to-embed pages.
+            Pixcel tool compares two live pages side by side, checks multiple viewport sizes, surfaces
+            spacing and typography drift, and opens live highlighted browser windows so you can inspect
+            DOM-level pixel issues directly against the rendered pages.
           </p>
         </div>
         <div class="hero-meta">
-          <span class="hero-chip">Twin Review</span>
-          <span class="hero-chip hero-chip-soft">Develop - Nishant Singh</span>
+          <span class="hero-chip">Live Compare</span>
+          <span class="hero-chip hero-chip-soft">Developer - Nishant Singh (ACS)</span>
         </div>
       </section>
 
@@ -43,13 +41,40 @@
             <input id="right-url" name="rightUrl" type="url" placeholder="https://staging.example.com" required />
           </label>
           <label>
-            Viewport
-            <select id="viewport" name="viewport"></select>
-          </label>
-          <label>
             Compare mode
             <select id="mode" name="mode"></select>
           </label>
+          <label>
+            Active viewport
+            <select id="viewport" name="viewport"></select>
+          </label>
+          <fieldset class="wide viewport-fieldset">
+            <legend>Batch viewports</legend>
+            <p class="fieldset-hint">
+              Select one or more sizes to run in sequence. The active viewport below the form follows the result you pick.
+            </p>
+            <div id="viewport-options" class="viewport-options"></div>
+          </fieldset>
+          <fieldset class="wide custom-viewport-fieldset">
+            <legend>Custom viewport</legend>
+            <p class="fieldset-hint">
+              Optionally add one exact viewport size for live pixel QA. It runs alongside any selected presets.
+            </p>
+            <div class="custom-viewport-grid">
+              <label>
+                Width
+                <input id="custom-width" name="customWidth" type="number" min="320" max="2560" placeholder="1512" />
+              </label>
+              <label>
+                Height
+                <input id="custom-height" name="customHeight" type="number" min="320" max="1800" placeholder="982" />
+              </label>
+              <label>
+                Label
+                <input id="custom-label" name="customLabel" type="text" placeholder="Design QA viewport" />
+              </label>
+            </div>
+          </fieldset>
           <label class="toggle-row wide" for="login-comparison-toggle">
             <span class="toggle-copy">
               <span class="toggle-title">Logged-in comparison</span>
@@ -120,6 +145,8 @@
           <h2>Review Notes</h2>
           <span id="summary" class="meta">No comparison yet.</span>
         </div>
+        <div id="run-summary" class="run-summary" hidden></div>
+        <ol id="session-list" class="session-list"></ol>
         <ul id="warnings-list" class="warnings-list"></ul>
         <div id="artifact-summary" class="artifact-summary"></div>
         <img id="diff-image" class="diff-image" alt="Pixel diff preview" />
