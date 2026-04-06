@@ -1,4 +1,4 @@
-# Pixcel tool
+# Pixel tool
 
 Local comparison tool for opening two URLs side by side, running either a DOM-based pixel audit or a screenshot diff across one or more common or custom viewport sizes, and launching a live inspection session with mismatch overlays injected into both pages when DOM mode is available.
 
