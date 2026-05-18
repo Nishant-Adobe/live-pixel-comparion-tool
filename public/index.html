@@ -1,159 +1,213 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Pixel tool</title>
-    <link rel="stylesheet" href="/styles.css" />
-  </head>
-  <body>
-    <main class="shell">
-      <section class="hero panel">
-        <div class="hero-copy">
-          <p class="eyebrow">Pixcel tool</p>
-          <h1>Pixel QA for two live URLs.</h1>
-          <p class="lede">
-            Pixel tool compares two live pages side by side, checks multiple viewport sizes, surfaces
-            spacing and typography drift, and opens live highlighted browser windows so you can inspect
-            DOM-level pixel issues directly against the rendered pages.
-          </p>
-        </div>
-        <div class="hero-meta">
-          <span class="hero-chip">Live Compare</span>
-          <span class="hero-chip hero-chip-soft">Developer - Nishant Singh (ACS)</span>
-        </div>
-      </section>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pixcel — Visual QA</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
 
-      <section class="panel controls">
-        <div class="panel-heading">
-          <div>
-            <p class="section-kicker">Session Setup</p>
-            <h2>Configure comparison</h2>
-          </div>
-        </div>
+    <!-- Toolbar -->
+    <header class="toolbar">
+      <div class="toolbar-brand">
+        <span class="brand-icon">
+          <svg viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg" width="14" height="14">
+            <rect x="1" y="1" width="7" height="7" rx="2" fill="white" opacity="0.9"/>
+            <rect x="10" y="1" width="7" height="7" rx="2" fill="white" opacity="0.5"/>
+            <rect x="1" y="10" width="7" height="7" rx="2" fill="white" opacity="0.5"/>
+            <rect x="10" y="10" width="7" height="7" rx="2" fill="white" opacity="0.85"/>
+          </svg>
+        </span>
+        <span class="brand-name">Pixcel</span>
+      </div>
+      <div class="view-switcher" id="view-switcher">
+        <button class="view-btn active" data-view="split">Split</button>
+        <button class="view-btn" data-view="left">Baseline</button>
+        <button class="view-btn" data-view="right">Checkpoint</button>
+        <button class="view-btn" data-view="diff">Diff</button>
+      </div>
+      <div class="toolbar-status">
+        <span class="status-chip status-idle" id="status-chip">Idle</span>
+        <span class="status-detail" id="status-detail"></span>
+      </div>
+      <button class="toolbar-config-btn" id="config-toggle" aria-expanded="false">
+        <svg class="config-icon" viewBox="0 0 16 16" fill="none" width="14" height="14">
+          <circle cx="8" cy="8" r="2.5" stroke="currentColor" stroke-width="1.3"/>
+          <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+        </svg>
+        Configure
+        <svg class="chevron-icon" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </header>
+
+    <!-- Config drawer (collapsed by default) -->
+    <div class="config-drawer" id="config-drawer" hidden>
+      <div class="config-inner">
         <form id="compare-form">
-          <label>
-            Left URL
-            <input id="left-url" name="leftUrl" type="url" placeholder="https://example.com" required />
-          </label>
-          <label>
-            Right URL
-            <input id="right-url" name="rightUrl" type="url" placeholder="https://staging.example.com" required />
-          </label>
-          <label>
-            Compare mode
-            <select id="mode" name="mode"></select>
-          </label>
-          <label>
-            Active viewport
-            <select id="viewport" name="viewport"></select>
-          </label>
-          <fieldset class="wide viewport-fieldset">
+          <div class="form-row">
+            <label class="form-field">
+              <span class="field-label">Baseline URL</span>
+              <input id="left-url" name="leftUrl" type="url" placeholder="https://live.example.com" required />
+            </label>
+            <label class="form-field">
+              <span class="field-label">Checkpoint URL</span>
+              <input id="right-url" name="rightUrl" type="url" placeholder="http://localhost:3000" required />
+            </label>
+            <label class="form-field form-field-sm">
+              <span class="field-label">Mode</span>
+              <select id="mode" name="mode"></select>
+            </label>
+            <label class="form-field form-field-sm">
+              <span class="field-label">Viewport</span>
+              <select id="viewport" name="viewport"></select>
+            </label>
+          </div>
+
+          <fieldset class="form-fieldset">
             <legend>Batch viewports</legend>
-            <p class="fieldset-hint">
-              Select one or more sizes to run in sequence. The active viewport below the form follows the result you pick.
-            </p>
-            <div id="viewport-options" class="viewport-options"></div>
+            <p class="fieldset-hint">Select one or more sizes to run in sequence.</p>
+            <div id="viewport-options" class="viewport-checks"></div>
           </fieldset>
-          <fieldset class="wide custom-viewport-fieldset">
+
+          <fieldset class="form-fieldset">
             <legend>Custom viewport</legend>
-            <p class="fieldset-hint">
-              Optionally add one exact viewport size for live pixel QA. It runs alongside any selected presets.
-            </p>
-            <div class="custom-viewport-grid">
-              <label>
-                Width
-                <input id="custom-width" name="customWidth" type="number" min="320" max="2560" placeholder="1512" />
-              </label>
-              <label>
-                Height
-                <input id="custom-height" name="customHeight" type="number" min="320" max="1800" placeholder="982" />
-              </label>
-              <label>
-                Label
-                <input id="custom-label" name="customLabel" type="text" placeholder="Design QA viewport" />
-              </label>
+            <div class="form-row">
+              <label class="form-field"><span class="field-label">Width</span><input id="custom-width" name="customWidth" type="number" min="320" max="2560" placeholder="1512" /></label>
+              <label class="form-field"><span class="field-label">Height</span><input id="custom-height" name="customHeight" type="number" min="320" max="1800" placeholder="982" /></label>
+              <label class="form-field"><span class="field-label">Label</span><input id="custom-label" name="customLabel" type="text" placeholder="Design QA" /></label>
             </div>
           </fieldset>
-          <label class="toggle-row wide" for="login-comparison-toggle">
+
+          <label class="toggle-row" for="login-comparison-toggle">
             <span class="toggle-copy">
-              <span class="toggle-title">Logged-in comparison</span>
-              <span class="toggle-hint">Enable this when both pages require a real signed-in session.</span>
+              <strong>Logged-in comparison</strong>
+              <small>Compare pages that require a signed-in session</small>
             </span>
             <input id="login-comparison-toggle" type="checkbox" />
           </label>
           <input id="storage-state-path" name="storageStatePath" type="hidden" />
-          <section id="capture-panel" class="capture-panel wide">
-            <div class="capture-copy">
-              <p class="section-kicker">Login Capture</p>
-              <h3>Open a site, sign in, then save session</h3>
-              <p class="capture-text">
-                Use one real browser session for both pages. Open the left or right site, log in
-                manually in that browser, then save the resulting storage-state file back into this form.
-              </p>
+
+          <section id="capture-panel" class="capture-section" style="display:none">
+            <h4 class="capture-heading">Login capture</h4>
+            <p class="capture-hint">Open the site, log in manually, then save the session.</p>
+            <label class="form-field form-field-narrow"><span class="field-label">Session name</span><input id="capture-session-name" type="text" placeholder="client-staging" /></label>
+            <div class="action-row">
+              <button type="button" id="start-left-capture-button" class="btn-secondary">Open baseline</button>
+              <button type="button" id="start-right-capture-button" class="btn-secondary">Open checkpoint</button>
+              <button type="button" id="save-capture-button" class="btn-secondary" disabled>Save session</button>
+              <button type="button" id="cancel-capture-button" class="btn-secondary" disabled>Cancel</button>
             </div>
-            <div class="capture-grid">
-              <label>
-                Session name
-                <input id="capture-session-name" type="text" placeholder="client-staging-login" />
-              </label>
-            </div>
-            <div class="actions capture-actions">
-              <button type="button" id="start-left-capture-button" class="secondary">Open left site</button>
-              <button type="button" id="start-right-capture-button" class="secondary">Open right site</button>
-              <button type="button" id="save-capture-button" class="secondary" disabled>Save session</button>
-              <button type="button" id="cancel-capture-button" class="secondary" disabled>Cancel</button>
-            </div>
-            <p id="capture-status" class="status capture-status">No login capture in progress.</p>
+            <p id="capture-status" class="hint-text">No capture in progress.</p>
           </section>
-          <div class="actions">
-            <button type="submit" id="compare-button">Run comparison</button>
-            <button type="button" id="open-live-button" class="secondary" disabled>Open live inspection</button>
+
+          <div class="form-actions">
+            <button type="submit" class="btn-primary">Run comparison</button>
+            <button type="button" id="open-live-button" class="btn-secondary" disabled>Live inspection</button>
+            <span id="status" class="hint-text">Waiting for input.</span>
           </div>
-          <p id="status" class="status">Waiting for input.</p>
         </form>
-      </section>
+      </div>
+    </div>
 
-      <section class="workspace">
-        <article class="panel stage">
-          <div class="stage-header">
-            <h2>Left Preview</h2>
-            <span id="left-meta" class="meta"></span>
-          </div>
-          <div id="left-frame-wrap" class="frame-wrap">
-            <div id="left-placeholder" class="preview-placeholder">Run a comparison to load the left preview.</div>
-            <img id="left-image" class="preview-image" alt="Left screenshot preview" />
-            <div id="left-overlay" class="overlay-layer"></div>
-          </div>
-        </article>
+    <!-- Workspace -->
+    <div class="workspace" id="workspace">
 
-        <article class="panel stage">
-          <div class="stage-header">
-            <h2>Right Preview</h2>
-            <span id="right-meta" class="meta"></span>
-          </div>
-          <div id="right-frame-wrap" class="frame-wrap">
-            <div id="right-placeholder" class="preview-placeholder">Run a comparison to load the right preview.</div>
-            <img id="right-image" class="preview-image" alt="Right screenshot preview" />
-            <div id="right-overlay" class="overlay-layer"></div>
-          </div>
-        </article>
-      </section>
-
-      <section class="panel findings">
-        <div class="stage-header">
-          <h2>Review Notes</h2>
-          <span id="summary" class="meta">No comparison yet.</span>
+      <!-- Baseline column -->
+      <div class="compare-col" id="left-col">
+        <div class="col-header">
+          <span class="col-tag col-tag-baseline">Baseline</span>
+          <span class="col-url-label" id="left-url-label"></span>
+          <span class="col-issues" id="left-meta"></span>
         </div>
-        <div id="run-summary" class="run-summary" hidden></div>
-        <ol id="session-list" class="session-list"></ol>
-        <ul id="warnings-list" class="warnings-list"></ul>
-        <div id="artifact-summary" class="artifact-summary"></div>
-        <img id="diff-image" class="diff-image" alt="Pixel diff preview" />
-        <ol id="findings-list" class="findings-list"></ol>
-      </section>
-    </main>
+        <div class="col-scroll" id="left-scroll">
+          <div class="col-canvas" id="left-canvas">
+            <img id="left-image" class="compare-img" alt="Baseline screenshot" style="display:none" />
+            <div class="region-layer" id="left-overlay"></div>
+          </div>
+          <div class="col-empty" id="left-placeholder">
+            <svg class="empty-icon" viewBox="0 0 48 48" fill="none">
+              <rect x="4" y="4" width="40" height="40" rx="8" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.3"/>
+              <circle cx="24" cy="20" r="6" stroke="currentColor" stroke-width="1.5" opacity="0.5"/>
+              <path d="M12 38c0-6.627 5.373-12 12-12s12 5.373 12 12" stroke="currentColor" stroke-width="1.5" opacity="0.5"/>
+            </svg>
+            <p class="empty-title">Baseline</p>
+            <p class="empty-hint">Enter URLs in Configure and run a comparison</p>
+          </div>
+        </div>
+      </div>
 
-    <script type="module" src="/app.js"></script>
-  </body>
+      <!-- Checkpoint column -->
+      <div class="compare-col" id="right-col">
+        <div class="col-header">
+          <span class="col-tag col-tag-checkpoint">Checkpoint</span>
+          <span class="col-url-label" id="right-url-label"></span>
+          <span class="col-issues" id="right-meta"></span>
+        </div>
+        <div class="col-scroll" id="right-scroll">
+          <div class="col-canvas" id="right-canvas">
+            <img id="right-image" class="compare-img" alt="Checkpoint screenshot" style="display:none" />
+            <div class="region-layer" id="right-overlay"></div>
+          </div>
+          <div class="col-empty" id="right-placeholder">
+            <svg class="empty-icon" viewBox="0 0 48 48" fill="none">
+              <rect x="4" y="4" width="40" height="40" rx="8" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.3"/>
+              <circle cx="24" cy="20" r="6" stroke="currentColor" stroke-width="1.5" opacity="0.5"/>
+              <path d="M12 38c0-6.627 5.373-12 12-12s12 5.373 12 12" stroke="currentColor" stroke-width="1.5" opacity="0.5"/>
+            </svg>
+            <p class="empty-title">Checkpoint</p>
+            <p class="empty-hint">Enter URLs in Configure and run a comparison</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Diff-only column -->
+      <div class="compare-col diff-only-col" id="diff-col" style="display:none">
+        <div class="col-header">
+          <span class="col-tag col-tag-diff">Pixel diff</span>
+          <span class="col-issues" id="artifact-summary"></span>
+        </div>
+        <div class="col-scroll">
+          <img id="diff-image" class="compare-img" alt="Pixel diff" style="display:none" />
+          <div class="col-empty" id="diff-placeholder">
+            <svg class="empty-icon" viewBox="0 0 48 48" fill="none">
+              <path d="M8 24h32M24 8v32" stroke="currentColor" stroke-width="1.5" opacity="0.3" stroke-linecap="round"/>
+              <circle cx="24" cy="24" r="12" stroke="currentColor" stroke-width="1.5" opacity="0.3" stroke-dasharray="3 3"/>
+            </svg>
+            <p class="empty-title">Pixel Diff</p>
+            <p class="empty-hint">Run a comparison to generate the diff image</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Regions sidebar -->
+      <aside class="regions-sidebar" id="regions-sidebar">
+        <div class="sidebar-head">
+          <span class="sidebar-title">Differences</span>
+          <span class="diff-badge" id="sidebar-badge">—</span>
+          <button class="reset-ignore-btn" id="reset-ignore-btn" hidden title="Restore all ignored regions">Reset ignored</button>
+        </div>
+        <div class="sidebar-body">
+          <ol class="viewport-tabs" id="session-list" style="display:none"></ol>
+          <ul class="warnings-list" id="warnings-list"></ul>
+          <ol class="region-cards" id="findings-list">
+            <li class="sidebar-empty">
+              <svg viewBox="0 0 32 32" fill="none" width="28" height="28">
+                <circle cx="16" cy="16" r="13" stroke="currentColor" stroke-width="1.2" opacity="0.3"/>
+                <path d="M11 16h10M16 11v10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.4"/>
+              </svg>
+              <span>Configure URLs and run a comparison to see differences here.</span>
+            </li>
+          </ol>
+        </div>
+      </aside>
+    </div>
+
+  </div>
+  <script type="module" src="/app.js"></script>
+</body>
 </html>
