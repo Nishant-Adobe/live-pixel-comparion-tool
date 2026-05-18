@@ -124,15 +124,15 @@ const COLLECT_SCRIPT = ({ selector }) => {
       .slice(0, 3)
       .join(".");
 
+    // Key uses only semantic/content attributes so elements match across different
+    // DOM structures and CSS class conventions (e.g. AEM live vs EDS local).
     const keyParts = [
       element.tagName.toLowerCase(),
       element.id || "",
       testId,
       role,
       ariaLabel,
-      text,
-      className,
-      pathFor(element)
+      text
     ];
 
     elements.push({
@@ -545,6 +545,103 @@ function normalizePngDimensions(sourcePng, width, height) {
   return normalized;
 }
 
+function mergeNearbyRegions(regions, gap = 60) {
+  let current = regions.slice();
+  let changed = true;
+
+  while (changed) {
+    changed = false;
+    const next = [];
+    const used = new Array(current.length).fill(false);
+
+    for (let i = 0; i < current.length; i++) {
+      if (used[i]) continue;
+      let r = { ...current[i] };
+
+      for (let j = i + 1; j < current.length; j++) {
+        if (used[j]) continue;
+        const o = current[j];
+        const proximity =
+          r.x - gap <= o.x + o.width &&
+          o.x - gap <= r.x + r.width &&
+          r.y - gap <= o.y + o.height &&
+          o.y - gap <= r.y + r.height;
+
+        if (proximity) {
+          const x0 = Math.min(r.x, o.x);
+          const y0 = Math.min(r.y, o.y);
+          const x1 = Math.max(r.x + r.width, o.x + o.width);
+          const y1 = Math.max(r.y + r.height, o.y + o.height);
+          r = { x: x0, y: y0, width: x1 - x0, height: y1 - y0, pixelCount: r.pixelCount + o.pixelCount };
+          used[j] = true;
+          changed = true;
+        }
+      }
+
+      next.push(r);
+    }
+
+    current = next;
+  }
+
+  return current;
+}
+
+function detectDiffRegions(diffPng, minPixels = 80) {
+  const { width, height, data } = diffPng;
+  const visited = new Uint8Array(width * height);
+  const regions = [];
+  const PADDING = 12;
+
+  const isDiff = (idx) => {
+    const p = idx * 4;
+    return data[p] > 200 && data[p + 1] < 160;
+  };
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = y * width + x;
+      if (visited[idx] || !isDiff(idx)) continue;
+      const stack = [idx];
+      visited[idx] = 1;
+      let x0 = x, x1 = x, y0 = y, y1 = y, count = 0;
+      while (stack.length) {
+        const cur = stack.pop();
+        const cy = Math.floor(cur / width);
+        const cx = cur % width;
+        count++;
+        if (cx < x0) x0 = cx;
+        if (cx > x1) x1 = cx;
+        if (cy < y0) y0 = cy;
+        if (cy > y1) y1 = cy;
+        for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+          const nx = cx + dx, ny = cy + dy;
+          if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+          const ni = ny * width + nx;
+          if (visited[ni] || !isDiff(ni)) continue;
+          visited[ni] = 1;
+          stack.push(ni);
+        }
+      }
+      if (count >= minPixels) {
+        const rx = Math.max(0, x0 - PADDING);
+        const ry = Math.max(0, y0 - PADDING);
+        regions.push({
+          x: rx,
+          y: ry,
+          width: Math.min(width - rx, x1 - x0 + 1 + PADDING * 2),
+          height: Math.min(height - ry, y1 - y0 + 1 + PADDING * 2),
+          pixelCount: count
+        });
+      }
+    }
+  }
+
+  return mergeNearbyRegions(regions)
+    .sort((a, b) => a.y - b.y)
+    .slice(0, 30);
+}
+
 async function writeDiffArtifacts({ artifactDir, sessionId, leftPage, rightPage }) {
   await ensureArtifactDir(artifactDir);
 
@@ -584,6 +681,8 @@ async function writeDiffArtifacts({ artifactDir, sessionId, leftPage, rightPage 
 
   await fs.writeFile(diffPath, PNG.sync.write(diffPng));
 
+  const diffRegions = detectDiffRegions(diffPng);
+
   return {
     leftImage: `/artifacts/${leftFile}`,
     rightImage: `/artifacts/${rightFile}`,
@@ -591,7 +690,8 @@ async function writeDiffArtifacts({ artifactDir, sessionId, leftPage, rightPage 
     width,
     height,
     mismatchPixels,
-    mismatchPercent: clampNumber((mismatchPixels / (width * height)) * 100)
+    mismatchPercent: clampNumber((mismatchPixels / (width * height)) * 100),
+    diffRegions
   };
 }
 
