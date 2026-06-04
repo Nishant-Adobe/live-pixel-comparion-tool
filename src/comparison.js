@@ -221,6 +221,151 @@ function getViewport(preset, customViewport = null) {
   };
 }
 
+// ── Overlay / consent dismissal ───────────────────────────────────────────────
+// Priority-ordered list of selectors to click.
+// AbbVie.com uses OneTrust's "notice + close" style banner — it has NO accept
+// button, only a × close button (#onetrust-close-btn-container button).
+// We try close/dismiss buttons BEFORE accept buttons so that style is handled.
+const CONSENT_SELECTORS = [
+  // ── OneTrust: close (×) button — AbbVie, most pharma ──
+  '#onetrust-close-btn-container button',
+  '#onetrust-close-btn-container .ot-close-icon',
+  '.onetrust-close-btn-handler',
+  'button.ot-close-icon',
+  '#onetrust-banner-sdk .ot-close-icon',
+  // ── OneTrust: accept / allow all button (other sites) ──
+  '#onetrust-accept-btn-handler',
+  '#accept-recommended-btn-handler',
+  'button#onetrust-accept-btn-handler',
+  // ── Cookiebot ──
+  '#CybotCookiebotDialogBodyButtonAccept',
+  '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll',
+  // ── TrustArc / Evidon ──
+  '#truste-consent-button',
+  '.truste-button1',
+  // ── Generic GDPR accept ──
+  'button[id*="cookie"][id*="accept" i]',
+  'button[class*="cookie"][class*="accept" i]',
+  'button[class*="accept"][class*="cookie" i]',
+  '[data-testid="cookie-accept"]',
+  '[data-testid="accept-all-cookies"]',
+  '[aria-label="Accept all cookies" i]',
+  '[aria-label="Accept cookies" i]',
+  '[aria-label="Allow all cookies" i]',
+  // ── Generic modal / popup / banner close ──
+  '[id*="onetrust"] button[aria-label="Close" i]',
+  '[id*="cookie"] button[aria-label="Close" i]',
+  '[id*="consent"] button[aria-label="Close" i]',
+  '[class*="cookie"] button[aria-label="Close" i]',
+  '[class*="consent"] button[aria-label="Close" i]',
+  '[class*="banner"] button[aria-label="Close" i]',
+  '[class*="modal"] button[aria-label="Close" i]',
+  '[class*="popup"] button[aria-label="Close" i]',
+  'button[aria-label="Dismiss" i]',
+];
+
+async function tryClick(locatorOrHandle, page, waitMs = 600) {
+  try {
+    await locatorOrHandle.click({ force: true, timeout: 3000 });
+    await page.waitForTimeout(waitMs);
+    await page.waitForLoadState('networkidle', { timeout: 4000 }).catch(() => {});
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function dismissOverlays(page) {
+  // Give dynamic banners (OneTrust injects after DOMContentLoaded) time to appear
+  await page.waitForTimeout(1200);
+
+  // ── Phase 1: wait specifically for OneTrust banner then close it ──
+  try {
+    await page.waitForSelector('#onetrust-banner-sdk', { state: 'visible', timeout: 5000 });
+    // Try close (×) button first — AbbVie style
+    const closers = [
+      '#onetrust-close-btn-container button',
+      '#onetrust-close-btn-container .ot-close-icon',
+      '.onetrust-close-btn-handler',
+      'button.ot-close-icon',
+    ];
+    for (const sel of closers) {
+      const el = page.locator(sel).first();
+      if (await el.isVisible({ timeout: 400 }).catch(() => false)) {
+        const clicked = await tryClick(el, page);
+        if (clicked) {
+          // Wait for banner to disappear
+          await page.waitForSelector('#onetrust-banner-sdk', { state: 'hidden', timeout: 3000 }).catch(() => {});
+          break;
+        }
+      }
+    }
+    // If no close button, try accept
+    const acceptEl = page.locator('#onetrust-accept-btn-handler').first();
+    if (await acceptEl.isVisible({ timeout: 400 }).catch(() => false)) {
+      await tryClick(acceptEl, page);
+      await page.waitForSelector('#onetrust-banner-sdk', { state: 'hidden', timeout: 3000 }).catch(() => {});
+    }
+  } catch {
+    // OneTrust not present — fall through to generic handling
+  }
+
+  // ── Phase 2: generic selectors sweep ──
+  for (const selector of CONSENT_SELECTORS) {
+    try {
+      const el = page.locator(selector).first();
+      if (await el.isVisible({ timeout: 400 }).catch(() => false)) {
+        await tryClick(el, page, 500);
+        break; // one dismiss per pass is enough
+      }
+    } catch {}
+  }
+
+  // ── Phase 3: iframes (OneTrust GTM variant wraps in an iframe) ──
+  try {
+    for (const frame of page.frames()) {
+      if (frame === page.mainFrame()) continue;
+      for (const sel of CONSENT_SELECTORS.slice(0, 10)) {
+        try {
+          const el = frame.locator(sel).first();
+          if (await el.isVisible({ timeout: 300 }).catch(() => false)) {
+            await el.click({ force: true, timeout: 2000 }).catch(() => {});
+            await page.waitForTimeout(500);
+            break;
+          }
+        } catch {}
+      }
+    }
+  } catch {}
+
+  // ── Phase 4: Escape key dismisses many remaining modals ──
+  await page.keyboard.press('Escape').catch(() => {});
+  await page.waitForTimeout(400);
+
+  // ── Phase 5: force-hide any lingering overlay/banner via JS ──
+  await page.evaluate(() => {
+    const bannerIds = ['onetrust-banner-sdk', 'onetrust-consent-sdk', 'onetrust-pc-sdk',
+                       'CybotCookiebotDialog', 'truste-consent-track'];
+    for (const id of bannerIds) {
+      const el = document.getElementById(id);
+      if (el) el.style.setProperty('display', 'none', 'important');
+    }
+    // Also hide by class patterns
+    const patterns = ['onetrust', 'cookie-banner', 'cookie-consent', 'cookiebot',
+                      'truste-overlay', 'consent-banner', 'gdpr-banner'];
+    for (const p of patterns) {
+      document.querySelectorAll(`[id*="${p}"], [class*="${p}"]`).forEach(el => {
+        const tag = el.tagName.toLowerCase();
+        if (!['html','body','header','main','footer','nav'].includes(tag)) {
+          el.style.setProperty('display', 'none', 'important');
+        }
+      });
+    }
+  }).catch(() => {});
+
+  await page.waitForTimeout(300);
+}
+
 const STABILIZE_INIT_SCRIPT = ({ fixedTimestamp }) => {
   const OriginalDate = Date;
   const fixedTime = fixedTimestamp;
@@ -300,7 +445,7 @@ async function inspectPage(page, url) {
 
   try {
     response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
-    await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
+    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
   } catch (error) {
     throw new Error(`Could not load ${url}: ${error.message}`);
   }
@@ -309,7 +454,16 @@ async function inspectPage(page, url) {
     throw new Error(`Could not load ${url}: no browser response was returned.`);
   }
 
+  // Follow any redirect — use the final response URL
   const status = response.status();
+
+  // Dismiss cookie consent banners, popups, and overlays before collecting DOM
+  await dismissOverlays(page);
+
+  // Extra settle time for any dismiss animations / reflows
+  await page.waitForTimeout(500);
+
+  // Re-stabilize after overlay removal (animations may have restarted during popup close)
   await page.evaluate(STABILIZE_PAGE_SCRIPT);
   await page.evaluate(async () => {
     await document.fonts?.ready?.catch?.(() => {});
@@ -338,42 +492,102 @@ async function inspectPage(page, url) {
   };
 }
 
-function buildDiffReasons(left, right) {
+/**
+ * Parse an rgba/rgb CSS color string into [r, g, b, a] array, or null.
+ */
+function parseColor(value) {
+  if (!value) return null;
+  const m = value.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)/);
+  if (!m) return null;
+  return [parseInt(m[1], 10), parseInt(m[2], 10), parseInt(m[3], 10), m[4] !== undefined ? parseFloat(m[4]) : 1];
+}
+
+/** Treat any color with alpha=0 as identical (both are fully transparent). */
+function colorsVisiblyDifferent(a, b) {
+  const ca = parseColor(a);
+  const cb = parseColor(b);
+  if (ca && cb && ca[3] === 0 && cb[3] === 0) return false;
+  return a !== b;
+}
+
+/**
+ * Compute the median Y delta and X delta across all matched element pairs.
+ * These represent global layout shifts (e.g. different header heights) that
+ * should not be reported as per-element issues.
+ */
+function computeGlobalOffsets(leftSnapshot, rightSnapshot) {
+  const rightMap = new Map(rightSnapshot.elements.map((el) => [el.key, el]));
+  const xDeltas = [];
+  const yDeltas = [];
+  for (const le of leftSnapshot.elements) {
+    const re = rightMap.get(le.key);
+    if (!re) continue;
+    xDeltas.push(re.rect.x - le.rect.x);
+    yDeltas.push(re.rect.y - le.rect.y);
+  }
+  const median = (arr) => {
+    if (arr.length === 0) return 0;
+    const s = [...arr].sort((a, b) => a - b);
+    const mid = Math.floor(s.length / 2);
+    return s.length % 2 !== 0 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+  };
+  return { x: median(xDeltas), y: median(yDeltas) };
+}
+
+/** Assign a severity level based on how many and what kinds of issues an element has. */
+function computeSeverity(reasons) {
+  const hasLayout = reasons.some(r => /offset|delta/.test(r));
+  const hasColor = reasons.some(r => /color|background/.test(r));
+  const hasFont = reasons.some(r => /font size/.test(r));
+  const count = reasons.length;
+  if (count >= 3 || (hasLayout && (hasColor || hasFont))) return 'critical';
+  if (count === 2 || hasLayout) return 'high';
+  if (hasColor || hasFont) return 'medium';
+  return 'low';
+}
+
+function buildDiffReasons(left, right, globalOffset = { x: 0, y: 0 }) {
   const reasons = [];
   const isMedia = ["img", "picture"].includes(left.tag) || ["img", "picture"].includes(right.tag);
+
+  const rawXDelta = right.rect.x - left.rect.x;
+  const rawYDelta = right.rect.y - left.rect.y;
+  // Subtract global offset so we only report element-specific position drift
+  const xDiff = Math.abs(rawXDelta - globalOffset.x);
+  const yDiff = Math.abs(rawYDelta - globalOffset.y);
+
   const deltas = {
-    x: Math.abs(left.rect.x - right.rect.x),
-    y: Math.abs(left.rect.y - right.rect.y),
     width: Math.abs(left.rect.width - right.rect.width),
     height: Math.abs(left.rect.height - right.rect.height),
     fontSize: Math.abs(parseFloat(left.metrics.fontSize) - parseFloat(right.metrics.fontSize))
   };
 
-  if (deltas.x > 4) {
-    reasons.push(`x offset ${clampNumber(deltas.x)}px`);
+  // Raised thresholds to 8px to suppress sub-pixel and minor browser rendering noise
+  if (xDiff > 8) {
+    reasons.push(`x offset ${clampNumber(xDiff)}px`);
   }
 
-  if (deltas.y > 4) {
-    reasons.push(`y offset ${clampNumber(deltas.y)}px`);
+  if (yDiff > 8) {
+    reasons.push(`y offset ${clampNumber(yDiff)}px`);
   }
 
-  if (deltas.width > 4) {
+  if (deltas.width > 8) {
     reasons.push(`width delta ${clampNumber(deltas.width)}px`);
   }
 
-  if (deltas.height > 4) {
+  if (deltas.height > 8) {
     reasons.push(`height delta ${clampNumber(deltas.height)}px`);
   }
 
-  if (!isMedia && deltas.fontSize > 0.5) {
+  if (!isMedia && deltas.fontSize > 1) {
     reasons.push(`font size delta ${clampNumber(deltas.fontSize)}px`);
   }
 
-  if (!isMedia && left.metrics.color !== right.metrics.color) {
+  if (!isMedia && colorsVisiblyDifferent(left.metrics.color, right.metrics.color)) {
     reasons.push("text color differs");
   }
 
-  if (left.metrics.backgroundColor !== right.metrics.backgroundColor) {
+  if (colorsVisiblyDifferent(left.metrics.backgroundColor, right.metrics.backgroundColor)) {
     reasons.push("background differs");
   }
 
@@ -385,11 +599,11 @@ function numericCssValue(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function buildFixSuggestions(left, right) {
+function buildFixSuggestions(left, right, globalOffset = { x: 0, y: 0 }) {
   const suggestions = [];
   const isMedia = ["img", "picture"].includes(left.tag) || ["img", "picture"].includes(right.tag);
-  const xDelta = right.rect.x - left.rect.x;
-  const yDelta = right.rect.y - left.rect.y;
+  const xDelta = (right.rect.x - left.rect.x) - globalOffset.x;
+  const yDelta = (right.rect.y - left.rect.y) - globalOffset.y;
   const widthDelta = right.rect.width - left.rect.width;
   const heightDelta = right.rect.height - left.rect.height;
   const fontSizeDelta =
@@ -399,7 +613,7 @@ function buildFixSuggestions(left, right) {
   const borderRadiusDelta =
     (numericCssValue(right.metrics.borderRadius) ?? 0) - (numericCssValue(left.metrics.borderRadius) ?? 0);
 
-  if (Math.abs(xDelta) > 4) {
+  if (Math.abs(xDelta) > 8) {
     suggestions.push(
       xDelta > 0
         ? `Move the left element about ${clampNumber(xDelta)}px to the right or reduce left-side horizontal spacing.`
@@ -407,7 +621,7 @@ function buildFixSuggestions(left, right) {
     );
   }
 
-  if (Math.abs(yDelta) > 4) {
+  if (Math.abs(yDelta) > 8) {
     suggestions.push(
       yDelta > 0
         ? `Push the left element down about ${clampNumber(yDelta)}px or reduce top spacing on the right reference.`
@@ -415,7 +629,7 @@ function buildFixSuggestions(left, right) {
     );
   }
 
-  if (Math.abs(widthDelta) > 4) {
+  if (Math.abs(widthDelta) > 8) {
     suggestions.push(
       widthDelta > 0
         ? `Increase the left element width by about ${clampNumber(widthDelta)}px or relax its max-width constraint.`
@@ -423,7 +637,7 @@ function buildFixSuggestions(left, right) {
     );
   }
 
-  if (Math.abs(heightDelta) > 4) {
+  if (Math.abs(heightDelta) > 8) {
     suggestions.push(
       heightDelta > 0
         ? `Increase the left element height by about ${clampNumber(heightDelta)}px by checking ${isMedia ? "image aspect ratio or media sizing" : "padding, line-height, or media sizing"}.`
@@ -431,7 +645,7 @@ function buildFixSuggestions(left, right) {
     );
   }
 
-  if (!isMedia && Math.abs(fontSizeDelta) > 0.5) {
+  if (!isMedia && Math.abs(fontSizeDelta) > 1) {
     suggestions.push(
       fontSizeDelta > 0
         ? `Increase the left font size by about ${clampNumber(fontSizeDelta)}px to match the right reference.`
@@ -490,40 +704,77 @@ function buildMismatchLabel(element) {
   return `${element.tag} element`;
 }
 
+const SEVERITY_ORDER = { critical: 0, high: 1, medium: 2, low: 3 };
+
 function compareElements(leftSnapshot, rightSnapshot) {
+  const globalOffset = computeGlobalOffsets(leftSnapshot, rightSnapshot);
   const rightMap = new Map(rightSnapshot.elements.map((element) => [element.key, element]));
+  const leftKeys = new Set(leftSnapshot.elements.map((el) => el.key));
   const mismatches = [];
 
+  // Matched elements — report only element-specific differences
   for (const leftElement of leftSnapshot.elements) {
     const rightElement = rightMap.get(leftElement.key);
 
     if (!rightElement) {
+      // Present on left, missing on right
+      mismatches.push({
+        key: leftElement.key,
+        label: buildMismatchLabel(leftElement),
+        reasons: ['missing on migrated page'],
+        suggestions: ['Add the corresponding element on the migrated page.'],
+        severity: 'critical',
+        left: leftElement,
+        right: null,
+        score: 10
+      });
       continue;
     }
 
-    const reasons = buildDiffReasons(leftElement, rightElement);
+    const reasons = buildDiffReasons(leftElement, rightElement, globalOffset);
 
     if (reasons.length === 0) {
       continue;
     }
 
+    const severity = computeSeverity(reasons);
+
     mismatches.push({
       key: leftElement.key,
       label: buildMismatchLabel(leftElement),
       reasons,
-      suggestions: buildFixSuggestions(leftElement, rightElement),
+      suggestions: buildFixSuggestions(leftElement, rightElement, globalOffset),
+      severity,
       left: leftElement,
       right: rightElement,
       score: reasons.length
     });
   }
 
-  return mismatches.sort((a, b) => {
-    if (b.score !== a.score) {
-      return b.score - a.score;
+  // Elements present on right but not on left
+  for (const rightElement of rightSnapshot.elements) {
+    if (!leftKeys.has(rightElement.key)) {
+      mismatches.push({
+        key: rightElement.key,
+        label: buildMismatchLabel(rightElement),
+        reasons: ['extra element on migrated page (not in original)'],
+        suggestions: ['Verify this element is intentional; remove if not present in the original.'],
+        severity: 'medium',
+        left: null,
+        right: rightElement,
+        score: 2
+      });
     }
+  }
 
-    return b.left.rect.width * b.left.rect.height - a.left.rect.width * a.left.rect.height;
+  // Sort: severity first, then score (issue count), then element area
+  return mismatches.sort((a, b) => {
+    const sevDiff = (SEVERITY_ORDER[a.severity] ?? 4) - (SEVERITY_ORDER[b.severity] ?? 4);
+    if (sevDiff !== 0) return sevDiff;
+    if (b.score !== a.score) return b.score - a.score;
+    const aArea = a.left ? a.left.rect.width * a.left.rect.height : 0;
+    const bArea = b.left ? b.left.rect.width * b.left.rect.height : 0;
+    return bArea - aArea;
   });
 }
 
@@ -652,6 +903,13 @@ async function writeDiffArtifacts({ artifactDir, sessionId, leftPage, rightPage 
   const rightPath = path.join(artifactDir, rightFile);
   const diffPath = path.join(artifactDir, diffFile);
 
+  // Scroll to top on both pages before full-page screenshot
+  await Promise.all([
+    leftPage.evaluate(() => window.scrollTo(0, 0)),
+    rightPage.evaluate(() => window.scrollTo(0, 0)),
+  ]);
+  await leftPage.waitForTimeout(400);
+
   await Promise.all([
     leftPage.screenshot({ path: leftPath, fullPage: true }),
     rightPage.screenshot({ path: rightPath, fullPage: true })
@@ -779,8 +1037,26 @@ export async function comparePages({
 }) {
   const viewport = getViewport(viewportPreset, customViewport);
   const fixedTimestamp = Date.UTC(2026, 0, 1, 0, 0, 0);
-  const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext(buildContextOptions(viewport, storageStatePath));
+  const browser = await chromium.launch({
+    headless: true,
+    args: [
+      '--disable-blink-features=AutomationControlled',
+      '--no-sandbox',
+      '--disable-dev-shm-usage',
+    ]
+  });
+  const contextOptions = {
+    ...buildContextOptions(viewport, storageStatePath),
+    // Realistic user-agent so sites don't serve bot-detection pages
+    userAgent:
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
+      '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    extraHTTPHeaders: {
+      'Accept-Language': 'en-US,en;q=0.9',
+    },
+    ignoreHTTPSErrors: true,
+  };
+  const context = await browser.newContext(contextOptions);
   await context.addInitScript(STABILIZE_INIT_SCRIPT, { fixedTimestamp });
   const leftPage = await context.newPage();
   const rightPage = await context.newPage();
@@ -884,6 +1160,17 @@ export async function openLiveComparison(session, storageStatePath = null) {
   await Promise.all([
     leftPage.goto(session.left.url, { waitUntil: "networkidle", timeout: 45000 }),
     rightPage.goto(session.right.url, { waitUntil: "networkidle", timeout: 45000 })
+  ]);
+
+  // Dismiss cookie/consent overlays in live windows before highlighting
+  await Promise.all([
+    dismissOverlays(leftPage),
+    dismissOverlays(rightPage)
+  ]);
+
+  await Promise.all([
+    leftPage.evaluate(STABILIZE_PAGE_SCRIPT),
+    rightPage.evaluate(STABILIZE_PAGE_SCRIPT)
   ]);
 
   await Promise.all([

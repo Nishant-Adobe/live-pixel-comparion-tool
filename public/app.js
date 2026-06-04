@@ -30,6 +30,8 @@ const configDrawer  = document.getElementById('config-drawer');
 const statusChip    = document.getElementById('status-chip');
 const statusDetail  = document.getElementById('status-detail');
 const viewSwitcher  = document.getElementById('view-switcher');
+const loadingOverlay = document.getElementById('loading-overlay');
+const loadingLabel   = document.getElementById('loading-label');
 
 // Workspace columns
 const leftCol       = document.getElementById('left-col');
@@ -479,11 +481,16 @@ function renderSidebar(result) {
       const suggestions = (mismatch.suggestions ?? [])
         .map((s) => `<li>${s}</li>`)
         .join('');
+      const severity = mismatch.severity ?? '';
+      const severityBadge = severity
+        ? `<span class="severity-badge severity-${severity}">${severity}</span>`
+        : '';
 
       li.innerHTML = `
         <div class="region-card-header">
           <span class="region-card-num">${i + 1}</span>
           <span class="region-card-title">${mismatch.label || 'Element'}</span>
+          ${severityBadge}
           <button class="ignore-btn" type="button" data-index="${i}" title="${ignored ? 'Restore' : 'Ignore'}">
             ${ignored ? 'Restore' : 'Ignore'}
           </button>
@@ -660,6 +667,10 @@ function ensureViewportOption(value, label) {
 async function handleCompare(event) {
   event.preventDefault();
 
+  // Collapse configure panel
+  configToggle.setAttribute('aria-expanded', 'false');
+  configDrawer.hidden = true;
+
   // Reset state (ignoredRegions reloaded from storage in applySelectedResult)
   currentResults      = [];
   selectedResultIndex = -1;
@@ -684,6 +695,10 @@ async function handleCompare(event) {
   sidebarBadge.classList.remove('has-diffs');
   resetIgnoreBtn.hidden = true;
   openLiveButton.disabled = true;
+
+  // Show loading overlay
+  loadingLabel.textContent = 'Running comparison…';
+  loadingOverlay.hidden = false;
 
   setChipState('running', 'Running…');
   setStatus('Running viewport comparison…');
@@ -722,8 +737,10 @@ async function handleCompare(event) {
       throw new Error('No results returned from the server.');
     }
 
+    loadingOverlay.hidden = true;
     applySelectedResult(0);
   } catch (error) {
+    loadingOverlay.hidden = true;
     setChipState('idle', 'Error');
     setStatus(error.message || 'Comparison failed.', true);
     findingsList.innerHTML = '<li class="empty-hint">Comparison failed. Check the URLs and try again.</li>';

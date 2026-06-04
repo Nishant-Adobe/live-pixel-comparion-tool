@@ -96,6 +96,7 @@ body {
   flex-direction: column;
   height: 100vh;
   overflow: hidden;
+  position: relative;
 }
 
 /* ── Toolbar ──────────────────────────────────────────── */
@@ -565,6 +566,48 @@ select {
 #status {
   font-size: 12px;
   color: var(--text-mid);
+  margin: 0;
+}
+
+/* ── Loading overlay ─────────────────────────────────── */
+.loading-overlay {
+  position: absolute;
+  top: var(--toolbar-h);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 190;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: rgba(14, 14, 18, 0.72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.loading-overlay[hidden] { display: none; }
+
+.loading-spinner {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.10);
+  border-top-color: #f02079;
+  border-right-color: rgba(240, 32, 121, 0.40);
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  letter-spacing: 0.01em;
   margin: 0;
 }
 
@@ -1045,6 +1088,24 @@ select {
   color: #f02079;
   background: rgba(240, 32, 121, 0.07);
 }
+
+/* Severity badges */
+.severity-badge {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-left: auto;
+  margin-right: 6px;
+}
+
+.severity-critical { background: rgba(220, 38, 38, 0.18); color: #f87171; border: 1px solid rgba(220, 38, 38, 0.35); }
+.severity-high     { background: rgba(234, 88, 12, 0.18); color: #fb923c; border: 1px solid rgba(234, 88, 12, 0.35); }
+.severity-medium   { background: rgba(202, 138, 4, 0.18);  color: #facc15; border: 1px solid rgba(202, 138, 4, 0.35); }
+.severity-low      { background: rgba(100, 116, 139, 0.18); color: #94a3b8; border: 1px solid rgba(100, 116, 139, 0.35); }
 
 /* Artifact stats */
 .artifact-stats {
